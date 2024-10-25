@@ -1,0 +1,113 @@
+pipeline {
+    agent any
+
+    environment {
+        // Inject the credentials as environment variables
+        KEYSTORE_FILE = credentials('android_keystore') // This is the ID of the jks file in Jenkins
+        STORE_PASSWORD = credentials('storePassword')
+        KEY_ALIAS = credentials('keyAlias')
+        KEY_PASSWORD = credentials('keyPassword')
+        APP_VERSION = ''
+        PLAYSTORE_ACCESS = credentials('playstore_access')
+        PATH = "/opt/homebrew/Caskroom/flutter/3.19.5/flutter/bin:/opt/homebrew/opt/ruby/bin:/opt/homebrew/bin:${env.PATH}"
+        LANG = 'en_US.UTF-8'
+        LC_ALL = 'en_US.UTF-8'
+    }
+
+    stages {
+        stage('Build') {
+            steps {
+                script {
+                    // Example command to verify Fastlane and Flutter are in the path
+                    sh 'flutter --version'
+                    sh 'fastlane --version'
+                    sh "bundler --version"
+                   // sh 'bundle exec fastlane --version' 
+                }
+            }
+        }
+        stage('Checkout') {
+            steps {
+                // Use Jenkins' git step with credentials
+                git branch:'main', url: 'https://github.com/gusstech/acegases_hms.git', credentialsId: 'b56e04cf-253f-4d19-ab3a-82af156da4e4'
+            }
+        }
+        stage('Get App Version') {
+            steps {
+                script {
+                    // Extract the app version from pubspec.yaml
+                    APP_VERSION = sh(script: "grep '^version:' pubspec.yaml | cut -d ' ' -f 2 | cut -d '+' -f 1", returnStdout: true).trim()
+                    echo "App version: ${APP_VERSION}"
+                }
+            }
+        }
+        stage('Generate key.properties') {
+            steps {
+                script {
+                    // Write the key.properties file dynamically
+                    writeFile file: 'android/key.properties', text: """
+                    storePassword=${STORE_PASSWORD}
+                    keyPassword=${KEY_PASSWORD}
+                    keyAlias=${KEY_ALIAS}
+                    storeFile=${WORKSPACE}/android/keystore.jks
+                    """
+                }
+            }
+        }
+
+        stage('Copy Keystore') {
+            steps {
+                sh '''
+                    mkdir -p ${WORKSPACE}/android
+                    cp ${KEYSTORE_FILE} ${WORKSPACE}/android/keystore.jks
+                    
+                '''
+            }
+        }
+        stage('Copy Google Access') {
+            steps {
+                sh '''
+                    mkdir -p ${WORKSPACE}/android
+                    cp ${PLAYSTORE_ACCESS} ${WORKSPACE}/android/fastlane/persuasive-net-417001-add98881eb51.json
+                    
+                '''
+            }
+        }
+
+        stage('Build AAB') {
+            steps {
+                script {
+                    sh "echo \$PATH"
+                    sh "flutter clean"
+                    sh "flutter build appbundle --release"
+                }
+            }
+        }
+        
+        // stage('Rename App Bundle') {
+        //     steps {
+        //         // Rename the AAB to a custom name, e.g., myapp-release.aab
+        //         sh "mv build/app/outputs/bundle/release/app-release.aab build/app/outputs/bundle/release/myapp-v${APP_VERSION}.aab"
+        //     }
+        // }
+        
+        // stage('Archive App Bundle') {
+        //     steps {
+        //         // Archive the renamed AAB with version
+        //         archiveArtifacts artifacts: "build/app/outputs/bundle/release/myapp-v${APP_VERSION}.aab", allowEmptyArchive: false
+        //     }
+        // }   
+        
+        stage('Deploy to Google Play Store') {
+            steps {
+                script {
+                    // Navigate to Android directory and run Fastlane for Play Store deployment
+                    dir('android') {
+                        sh "bundle exec fastlane release"
+                        // sh 'bundle exec fastlane upload_to_play_store'
+                    }
+                }
+            }
+        }
+    }
+}
