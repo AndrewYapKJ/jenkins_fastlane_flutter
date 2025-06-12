@@ -29,7 +29,7 @@ pipeline {
         stage('Checkout') {
             steps {
                 // Use Jenkins' git step with credentials
-                git branch:'main', url: 'https://github.com/gusstech/acegases_hms.git', credentialsId: 'b56e04cf-253f-4d19-ab3a-82af156da4e4'
+                git branch:'main', url: 'https://github.com/gusstech/acegases_hms.git', credentialsId: ''
             }
         }
         stage('Get App Version') {
